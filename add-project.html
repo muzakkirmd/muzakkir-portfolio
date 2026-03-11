@@ -5,231 +5,59 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>MMA · Project Updater</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root {
-    --bg: #080c14;
-    --surface: #0f1624;
-    --border: rgba(255,255,255,0.07);
-    --accent: #00e5ff;
-    --accent2: #7c3aed;
-    --text: #e8edf5;
-    --muted: rgba(232,237,245,0.45);
-    --success: #00e096;
-    --error: #ff4d6d;
-    --warn: #ffd166;
+    --bg: #080c14; --surface: #0f1624; --border: rgba(255,255,255,0.07);
+    --accent: #00e5ff; --accent2: #7c3aed; --text: #e8edf5;
+    --muted: rgba(232,237,245,0.45); --success: #00e096; --error: #ff4d6d; --warn: #ffd166;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'DM Sans', sans-serif;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    overflow-x: hidden;
-  }
-  body::before {
-    content: '';
-    position: fixed;
-    top: -200px; left: -200px;
-    width: 600px; height: 600px;
-    background: radial-gradient(circle, rgba(0,229,255,0.06) 0%, transparent 70%);
-    pointer-events: none;
-  }
-  body::after {
-    content: '';
-    position: fixed;
-    bottom: -200px; right: -100px;
-    width: 500px; height: 500px;
-    background: radial-gradient(circle, rgba(124,58,237,0.07) 0%, transparent 70%);
-    pointer-events: none;
-  }
-
-  .card {
-    width: 100%;
-    max-width: 580px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 24px;
-    padding: 40px;
-    position: relative;
-    z-index: 1;
-    box-shadow: 0 32px 80px rgba(0,0,0,0.5);
-  }
-
-  /* Header */
+  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  body::before { content: ''; position: fixed; top: -200px; left: -200px; width: 600px; height: 600px; background: radial-gradient(circle, rgba(0,229,255,0.06) 0%, transparent 70%); pointer-events: none; }
+  body::after { content: ''; position: fixed; bottom: -200px; right: -100px; width: 500px; height: 500px; background: radial-gradient(circle, rgba(124,58,237,0.07) 0%, transparent 70%); pointer-events: none; }
+  .card { width: 100%; max-width: 580px; background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: 40px; position: relative; z-index: 1; box-shadow: 0 32px 80px rgba(0,0,0,0.5); }
   .header { text-align: center; margin-bottom: 36px; }
-  .logo {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 56px; height: 56px;
-    border-radius: 16px;
-    background: linear-gradient(135deg, var(--accent2), #4f1da8);
-    font-size: 1.5rem;
-    margin-bottom: 16px;
-    box-shadow: 0 8px 24px rgba(124,58,237,0.4);
-  }
-  h1 {
-    font-family: 'Syne', sans-serif;
-    font-size: 1.75rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.6) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
+  .logo { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(135deg, var(--accent2), #4f1da8); font-size: 1.5rem; margin-bottom: 16px; box-shadow: 0 8px 24px rgba(124,58,237,0.4); }
+  h1 { font-family: 'Syne', sans-serif; font-size: 1.75rem; font-weight: 800; letter-spacing: -0.02em; background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.6) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
   .subtitle { color: var(--muted); font-size: 0.875rem; margin-top: 6px; }
-
-  /* Form fields */
   .field { margin-bottom: 20px; }
-  label {
-    display: block;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 8px;
-  }
-  input[type="password"], input[type="text"] {
-    width: 100%;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 13px 16px;
-    color: var(--text);
-    font-family: 'DM Sans', sans-serif;
-    font-size: 0.9rem;
-    outline: none;
-    transition: border-color 0.2s;
-  }
+  label { display: block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .label-row label { margin-bottom: 0; }
+  .free-badge { font-size: 0.65rem; font-weight: 700; background: rgba(0,224,150,0.15); color: var(--success); border: 1px solid rgba(0,224,150,0.3); border-radius: 20px; padding: 2px 8px; letter-spacing: 0.08em; }
+  input[type="password"] { width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 12px; padding: 13px 16px; color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 0.9rem; outline: none; transition: border-color 0.2s; }
   input:focus { border-color: rgba(0,229,255,0.4); }
-
-  /* Site selector */
+  .hint { font-size: 0.72rem; color: var(--muted); margin-top: 6px; }
+  .hint a { color: var(--accent); text-decoration: none; }
   .site-btns { display: flex; gap: 10px; }
-  .site-btn {
-    flex: 1;
-    padding: 12px;
-    border-radius: 12px;
-    border: 1.5px solid var(--border);
-    background: transparent;
-    color: var(--muted);
-    font-family: 'Syne', sans-serif;
-    font-weight: 600;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: all 0.2s;
-    letter-spacing: 0.02em;
-  }
-  .site-btn.active {
-    border-color: var(--accent);
-    background: rgba(0,229,255,0.08);
-    color: var(--accent);
-  }
-
-  /* Drop zone */
-  .dropzone {
-    border: 2px dashed rgba(0,229,255,0.2);
-    border-radius: 14px;
-    padding: 32px 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.25s;
-    background: rgba(0,229,255,0.02);
-    position: relative;
-  }
+  .site-btn { flex: 1; padding: 12px; border-radius: 12px; border: 1.5px solid var(--border); background: transparent; color: var(--muted); font-family: 'Syne', sans-serif; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; }
+  .site-btn.active { border-color: var(--accent); background: rgba(0,229,255,0.08); color: var(--accent); }
+  .dropzone { border: 2px dashed rgba(0,229,255,0.2); border-radius: 14px; padding: 32px 20px; text-align: center; cursor: pointer; transition: all 0.25s; background: rgba(0,229,255,0.02); }
   .dropzone:hover, .dropzone.drag { border-color: rgba(0,229,255,0.5); background: rgba(0,229,255,0.05); }
   .dropzone.has-file { border-color: rgba(0,229,255,0.4); background: rgba(0,229,255,0.06); }
   .drop-icon { font-size: 2rem; margin-bottom: 10px; }
   .drop-text { color: var(--muted); font-size: 0.875rem; }
   .drop-text strong { color: var(--accent); font-weight: 500; }
   #fileInput { display: none; }
-
-  /* Submit button */
-  .btn-main {
-    width: 100%;
-    padding: 16px;
-    border-radius: 14px;
-    border: none;
-    background: linear-gradient(135deg, #00e5ff, #0099cc);
-    color: #000;
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 1rem;
-    letter-spacing: 0.04em;
-    cursor: pointer;
-    transition: all 0.2s;
-    box-shadow: 0 4px 24px rgba(0,229,255,0.25);
-    margin-top: 8px;
-  }
-  .btn-main:hover { transform: translateY(-1px); box-shadow: 0 8px 32px rgba(0,229,255,0.35); }
+  .btn-main { width: 100%; padding: 16px; border-radius: 14px; border: none; background: linear-gradient(135deg, #00e5ff, #0099cc); color: #000; font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1rem; letter-spacing: 0.04em; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 24px rgba(0,229,255,0.25); margin-top: 8px; }
+  .btn-main:hover { transform: translateY(-1px); }
   .btn-main:disabled { background: rgba(255,255,255,0.08); color: var(--muted); cursor: not-allowed; transform: none; box-shadow: none; }
-  .btn-main.success { background: linear-gradient(135deg, #00e096, #00a86b); box-shadow: 0 4px 24px rgba(0,224,150,0.3); }
-
-  /* Log terminal */
-  .terminal {
-    margin-top: 20px;
-    background: rgba(0,0,0,0.4);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 16px;
-    max-height: 220px;
-    overflow-y: auto;
-    font-family: 'Courier New', monospace;
-    font-size: 0.8rem;
-  }
-  .log-line { padding: 3px 0; display: flex; gap: 8px; align-items: flex-start; }
+  .btn-main.success { background: linear-gradient(135deg, #00e096, #00a86b); }
+  .terminal { margin-top: 20px; background: rgba(0,0,0,0.4); border: 1px solid var(--border); border-radius: 12px; padding: 16px; max-height: 220px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.8rem; }
+  .log-line { padding: 3px 0; display: flex; gap: 8px; }
   .log-line .ts { color: rgba(255,255,255,0.2); flex-shrink: 0; }
-  .log-info { color: rgba(255,255,255,0.65); }
-  .log-success { color: var(--success); }
-  .log-error { color: var(--error); }
-  .log-warn { color: var(--warn); }
-  .log-ai { color: var(--accent); }
-
-  /* Preview card */
-  .preview {
-    margin-top: 16px;
-    background: rgba(0,229,255,0.05);
-    border: 1px solid rgba(0,229,255,0.15);
-    border-radius: 12px;
-    padding: 16px 18px;
-  }
+  .log-info { color: rgba(255,255,255,0.65); } .log-success { color: var(--success); } .log-error { color: var(--error); } .log-warn { color: var(--warn); } .log-ai { color: var(--accent); }
+  .preview { margin-top: 16px; background: rgba(0,229,255,0.05); border: 1px solid rgba(0,229,255,0.15); border-radius: 12px; padding: 16px 18px; }
   .preview-label { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
   .preview-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 1rem; color: #fff; margin-bottom: 4px; }
   .preview-desc { color: var(--muted); font-size: 0.82rem; line-height: 1.6; }
-
-  /* Divider */
   .divider { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
-
-  /* Footer note */
   .foot-note { text-align: center; color: rgba(255,255,255,0.2); font-size: 0.72rem; margin-top: 20px; }
-
-  .spinner {
-    display: inline-block;
-    width: 14px; height: 14px;
-    border: 2px solid rgba(0,0,0,0.2);
-    border-top-color: #000;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    vertical-align: middle;
-    margin-right: 6px;
-  }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(0,0,0,0.2); border-top-color: #000; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-
   .sites-result { display: flex; gap: 10px; margin-top: 14px; }
-  .site-result-badge {
-    flex: 1;
-    padding: 10px;
-    border-radius: 10px;
-    text-align: center;
-    font-size: 0.82rem;
-    font-weight: 600;
-    font-family: 'Syne', sans-serif;
-  }
+  .site-result-badge { flex: 1; padding: 10px; border-radius: 10px; text-align: center; font-size: 0.82rem; font-weight: 600; font-family: 'Syne', sans-serif; }
   .site-result-badge.ok { background: rgba(0,224,150,0.12); color: var(--success); border: 1px solid rgba(0,224,150,0.2); }
   .site-result-badge.fail { background: rgba(255,77,109,0.12); color: var(--error); border: 1px solid rgba(255,77,109,0.2); }
   .site-result-badge.skip { background: rgba(255,255,255,0.04); color: var(--muted); border: 1px solid var(--border); }
@@ -240,24 +68,25 @@
   <div class="header">
     <div class="logo">🚀</div>
     <h1>Project Updater</h1>
-    <p class="subtitle">Upload PDF → AI analyzes your site style → pushes a matching card</p>
+    <p class="subtitle">Upload PDF → AI analyzes your site → pushes a matching card</p>
   </div>
 
-  <!-- GitHub Token -->
   <div class="field">
     <label>GitHub Token</label>
     <input type="password" id="tokenInput" placeholder="ghp_..." autocomplete="off"/>
   </div>
 
-  <!-- Anthropic Key -->
   <div class="field">
-    <label>Anthropic API Key</label>
-    <input type="password" id="anthropicKey" placeholder="sk-ant-..." autocomplete="off"/>
+    <div class="label-row">
+      <label>Groq API Key</label>
+      <span class="free-badge">✅ FREE</span>
+    </div>
+    <input type="password" id="groqKey" placeholder="gsk_..." autocomplete="off"/>
+    <p class="hint">You already have one from Aini! Or get free at <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a></p>
   </div>
 
   <hr class="divider"/>
 
-  <!-- Site Selector -->
   <div class="field">
     <label>Target Site</label>
     <div class="site-btns">
@@ -267,7 +96,6 @@
     </div>
   </div>
 
-  <!-- PDF Upload -->
   <div class="field">
     <label>Project PDF</label>
     <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()"
@@ -280,28 +108,20 @@
     <input type="file" id="fileInput" accept=".pdf" onchange="handleFile(this.files[0])"/>
   </div>
 
-  <!-- Submit -->
-  <button class="btn-main" id="submitBtn" onclick="run()" disabled>
-    ✨ Add Project to GitHub
-  </button>
-
-  <!-- Log -->
+  <button class="btn-main" id="submitBtn" onclick="run()" disabled>✨ Add Project to GitHub</button>
   <div class="terminal" id="terminal" style="display:none"></div>
-
-  <!-- Preview -->
   <div class="preview" id="preview" style="display:none">
     <div class="preview-label">📋 Extracted from PDF</div>
     <div class="preview-title" id="previewTitle"></div>
     <div class="preview-desc" id="previewDesc"></div>
   </div>
-
-  <!-- Results -->
   <div class="sites-result" id="resultsRow" style="display:none"></div>
-
-  <p class="foot-note">🔒 Your keys are never stored — session only</p>
+  <p class="foot-note">🔒 Keys never stored — session only · Powered by Groq (free)</p>
 </div>
 
 <script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
 const REPOS = {
   portfolio: { owner: 'muzakkirmd', repo: 'muzakkir-portfolio' },
   freelance: { owner: 'muzakkirmd', repo: 'muzakkir-freelance' },
@@ -309,7 +129,6 @@ const REPOS = {
 
 let selectedSite = 'both';
 let pdfFile = null;
-let pdfBase64 = null;
 
 function toggleSite(s) {
   selectedSite = s;
@@ -318,12 +137,12 @@ function toggleSite(s) {
 }
 
 function checkReady() {
-  const ready = pdfFile && document.getElementById('tokenInput').value && document.getElementById('anthropicKey').value;
-  document.getElementById('submitBtn').disabled = !ready;
+  const ok = pdfFile && document.getElementById('tokenInput').value && document.getElementById('groqKey').value;
+  document.getElementById('submitBtn').disabled = !ok;
 }
 
 document.getElementById('tokenInput').addEventListener('input', checkReady);
-document.getElementById('anthropicKey').addEventListener('input', checkReady);
+document.getElementById('groqKey').addEventListener('input', checkReady);
 
 function handleDrop(e) {
   e.preventDefault();
@@ -338,31 +157,45 @@ function handleFile(f) {
   document.getElementById('dropIcon').textContent = '✅';
   document.getElementById('dropText').innerHTML = `<strong>${f.name}</strong>`;
   document.getElementById('dropzone').classList.add('has-file');
-  const reader = new FileReader();
-  reader.onload = () => { pdfBase64 = reader.result.split(',')[1]; checkReady(); };
-  reader.readAsDataURL(f);
+  checkReady();
 }
 
 const terminal = document.getElementById('terminal');
 function log(msg, type = 'info') {
   terminal.style.display = 'block';
   const now = new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  const line = document.createElement('div');
-  line.className = 'log-line';
-  line.innerHTML = `<span class="ts">${now}</span><span class="log-${type}">${msg}</span>`;
-  terminal.appendChild(line);
+  const d = document.createElement('div');
+  d.className = 'log-line';
+  d.innerHTML = `<span class="ts">${now}</span><span class="log-${type}">${msg}</span>`;
+  terminal.appendChild(d);
   terminal.scrollTop = terminal.scrollHeight;
 }
 
-async function callClaude(anthropicKey, messages, system) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+async function extractPDFText(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let text = '';
+  for (let i = 1; i <= Math.min(pdf.numPages, 4); i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map(x => x.str).join(' ') + '\n';
+  }
+  return text.trim();
+}
+
+async function callGroq(groqKey, system, user) {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, system, messages })
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
+    body: JSON.stringify({
+      model: 'llama-3.1-8b-instant',
+      max_tokens: 6000,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
+    })
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'Claude API error');
-  return data.content.map(c => c.text || '').join('');
+  if (!res.ok) throw new Error(data.error?.message || 'Groq API error');
+  return data.choices[0].message.content;
 }
 
 async function fetchRepo(owner, repo, token) {
@@ -386,8 +219,8 @@ async function pushRepo(owner, repo, token, html, sha, title) {
 
 async function run() {
   const token = document.getElementById('tokenInput').value.trim();
-  const anthropicKey = document.getElementById('anthropicKey').value.trim();
-  if (!token || !anthropicKey || !pdfBase64) return;
+  const groqKey = document.getElementById('groqKey').value.trim();
+  if (!token || !groqKey || !pdfFile) return;
 
   terminal.innerHTML = '';
   terminal.style.display = 'block';
@@ -397,116 +230,113 @@ async function run() {
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Processing...';
+  btn.onclick = null;
 
   const results = {};
 
   try {
-    // Step 1: Extract project info from PDF
-    log('🤖 Reading PDF with Claude AI...', 'ai');
-    const extractPrompt = `Extract the project title and a concise description (2-3 sentences max) from this PDF document.
-Respond ONLY with raw JSON, no markdown, no backticks:
-{"title": "...", "description": "..."}`;
+    log('📄 Extracting PDF text...', 'info');
+    const pdfText = await extractPDFText(pdfFile);
+    log('✅ PDF text extracted!', 'success');
 
-    const extracted = await callClaude(anthropicKey,
-      [{ role: 'user', content: [
-        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
-        { type: 'text', text: extractPrompt }
-      ]}],
-      'You are a precise data extractor. Return only valid JSON.'
+    log('🤖 Groq AI extracting project info (free)...', 'ai');
+    const extracted = await callGroq(
+      groqKey,
+      'Return ONLY valid raw JSON. No markdown, no backticks, no explanation.',
+      `Extract the project title and a 2-3 sentence description from this text. Respond ONLY with: {"title":"...","description":"..."}\n\n${pdfText.substring(0,3000)}`
     );
-
     const { title, description } = JSON.parse(extracted.replace(/```json|```/g,'').trim());
-    log(`📋 Extracted: "${title}"`, 'success');
+    log(`📋 "${title}"`, 'success');
 
     document.getElementById('preview').style.display = 'block';
     document.getElementById('previewTitle').textContent = title;
     document.getElementById('previewDesc').textContent = description;
 
-    // Step 2: Determine which repos to update
-    const targets = selectedSite === 'both'
-      ? ['portfolio','freelance']
-      : [selectedSite];
+    const targets = selectedSite === 'both' ? ['portfolio','freelance'] : [selectedSite];
 
     for (const site of targets) {
       const { owner, repo } = REPOS[site];
       try {
-        log(`📡 Fetching index.html from ${repo}...`, 'info');
+        log(`📡 Fetching ${repo} index.html...`, 'info');
         const { sha, html } = await fetchRepo(owner, repo, token);
         log(`✅ Fetched (${(html.length/1024).toFixed(0)}KB)`, 'success');
 
-        // Step 3: Ask Claude to analyze the site and generate a matching card
         log(`🧠 Analyzing ${site} card style...`, 'ai');
+        // Send only the projects section portion to stay within Groq token limit
+        const projIdx = html.search(/id=["']projects["']/i);
+        const htmlChunk = projIdx > -1
+          ? html.substring(Math.max(0, projIdx - 200), Math.min(html.length, projIdx + 6000))
+          : html.substring(0, 6000);
 
-        const injectPrompt = `You are editing an HTML portfolio site. Your job is to add a new project card that PERFECTLY matches the existing project cards' style.
-
-TASK:
-1. Find the projects section in the HTML
-2. Study the EXACT structure, CSS classes, inline styles, and HTML of the existing project cards
-3. Create a NEW card for the project below using the IDENTICAL structure/classes/styles as existing cards
-4. Insert the new card at the END of the existing project cards list, wrapped with:
-   <!-- PROJECT-START: ${title} -->
-   [your card here]
-   <!-- PROJECT-END: ${title} -->
-5. Return the COMPLETE updated HTML file
+        const updatedChunk = await callGroq(
+          groqKey,
+          'You are an expert HTML editor. Return ONLY the complete updated HTML snippet. No markdown, no backticks, no commentary.',
+          `Add a new project card to this HTML that EXACTLY matches the style of existing project cards.
 
 NEW PROJECT:
 Title: ${title}
 Description: ${description}
 
-CRITICAL RULES:
-- Copy the EXACT same card HTML structure as existing cards (same tags, classes, attributes)
-- Do NOT add any new CSS or change any existing code
-- Only ADD the new card — never modify or remove existing content
-- Return the full HTML, nothing else`;
+RULES:
+- Copy the EXACT same HTML structure, CSS classes, and attributes as existing cards
+- Add the new card at the END of existing cards
+- Wrap it with: <!-- PROJECT-START: ${title} --> and <!-- PROJECT-END: ${title} -->
+- Return the complete updated HTML snippet only
 
-        const updatedHtml = await callClaude(anthropicKey,
-          [{ role: 'user', content: html + '\n\n---\n\n' + injectPrompt }],
-          'You are an expert HTML editor. Return only the complete updated HTML file with no commentary, no markdown fences.'
+HTML:
+${htmlChunk}`
         );
 
-        // Clean up any markdown fences Claude might add
-        const cleanHtml = updatedHtml.replace(/^```html\n?/,'').replace(/\n?```$/,'').trim();
+        const cleanChunk = updatedChunk.replace(/^```html\n?/,'').replace(/\n?```$/,'').trim();
+
+        // Merge updated chunk back into full HTML
+        let finalHtml;
+        if (projIdx > -1) {
+          const before = html.substring(0, Math.max(0, projIdx - 200));
+          const after = html.substring(Math.min(html.length, projIdx + 6000));
+          finalHtml = before + cleanChunk + after;
+        } else {
+          finalHtml = cleanChunk;
+        }
 
         log(`🚀 Pushing to ${repo}...`, 'info');
-        await pushRepo(owner, repo, token, cleanHtml, sha, title);
-        log(`✅ Successfully pushed to ${repo}!`, 'success');
+        await pushRepo(owner, repo, token, finalHtml, sha, title);
+        log(`✅ Pushed to ${repo}!`, 'success');
         results[site] = 'ok';
-      } catch (err) {
+      } catch(err) {
         log(`❌ ${site}: ${err.message}`, 'error');
         results[site] = 'fail';
       }
     }
 
-    // Results
     const row = document.getElementById('resultsRow');
-    row.style.display = 'flex';
-    row.innerHTML = '';
+    row.style.display = 'flex'; row.innerHTML = '';
     ['portfolio','freelance'].forEach(s => {
-      const badge = document.createElement('div');
-      badge.className = `site-result-badge ${results[s] || 'skip'}`;
-      badge.textContent = results[s] === 'ok' ? `✅ ${s.charAt(0).toUpperCase()+s.slice(1)} Done`
-                        : results[s] === 'fail' ? `❌ ${s.charAt(0).toUpperCase()+s.slice(1)} Failed`
-                        : `— ${s.charAt(0).toUpperCase()+s.slice(1)} Skipped`;
-      row.appendChild(badge);
+      const b = document.createElement('div');
+      b.className = `site-result-badge ${results[s] || 'skip'}`;
+      b.textContent = results[s]==='ok' ? `✅ ${s[0].toUpperCase()+s.slice(1)} Done`
+                    : results[s]==='fail' ? `❌ ${s[0].toUpperCase()+s.slice(1)} Failed`
+                    : `— ${s[0].toUpperCase()+s.slice(1)} Skipped`;
+      row.appendChild(b);
     });
 
     const allOk = Object.values(results).every(v => v === 'ok');
     btn.className = 'btn-main' + (allOk ? ' success' : '');
-    btn.innerHTML = allOk ? '🎉 Done! Add Another' : '⚠️ Partial — Try Again';
+    btn.innerHTML = allOk ? '🎉 Done! Add Another' : '⚠️ Retry';
     btn.disabled = false;
-    btn.onclick = () => { if(allOk) resetForm(); else run(); };
+    btn.onclick = allOk ? resetForm : run;
+    if (allOk) log('⏳ Sites rebuild in ~30s!', 'warn');
 
-    if (allOk) log(`⏳ Sites rebuild in ~30s — check your live URLs!`, 'warn');
-
-  } catch (err) {
-    log(`❌ Fatal error: ${err.message}`, 'error');
+  } catch(err) {
+    log(`❌ Fatal: ${err.message}`, 'error');
     btn.innerHTML = '✨ Add Project to GitHub';
     btn.disabled = false;
+    btn.onclick = run;
   }
 }
 
 function resetForm() {
-  pdfFile = null; pdfBase64 = null;
+  pdfFile = null;
   document.getElementById('dropIcon').textContent = '📄';
   document.getElementById('dropText').innerHTML = 'Drop your PDF here or <strong>click to browse</strong>';
   document.getElementById('dropzone').classList.remove('has-file');
