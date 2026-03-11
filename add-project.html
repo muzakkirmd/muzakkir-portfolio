@@ -292,17 +292,35 @@ function cloneAndInjectCard(html, title, description, tags) {
   // Step 4: Clone last card as raw string
   let newCardStr = html.slice(lastCardAbsStart, lastCardAbsEnd);
 
-  // Step 5: Replace title (h2/h3/h4)
-  newCardStr = newCardStr.replace(
+  // Step 5: Replace title — try h2/h3/h4 first, then class-based divs/spans
+  const titleReplaced = newCardStr.replace(
     /(<h[234][^>]*>)([\s\S]*?)(<\/h[234]>)/i,
     (_, open, _c, close) => open + title + close
   );
+  if (titleReplaced !== newCardStr) {
+    newCardStr = titleReplaced;
+  } else {
+    // Fallback: find div/span/p with class containing title/name/heading
+    newCardStr = newCardStr.replace(
+      /(<(?:div|span|p)[^>]*class=["'][^"']*(?:title|heading|name|project-name)[^"']*["'][^>]*>)([\s\S]*?)(<\/(?:div|span|p)>)/i,
+      (_, open, _c, close) => open + title + close
+    );
+  }
 
-  // Step 6: Replace description (first <p>)
-  newCardStr = newCardStr.replace(
-    /(<p[^>]*>)([\s\S]*?)(<\/p>)/i,
+  // Step 6: Replace description — try <p> first, then class-based
+  const descReplaced = newCardStr.replace(
+    /(<p(?:\s[^>]*)?>)([\s\S]*?)(<\/p>)/i,
     (_, open, _c, close) => open + description + close
   );
+  if (descReplaced !== newCardStr) {
+    newCardStr = descReplaced;
+  } else {
+    // Fallback: div/span with class containing desc/text/summary/body
+    newCardStr = newCardStr.replace(
+      /(<(?:div|span)[^>]*class=["'][^"']*(?:desc|description|text|summary|body|content)[^"']*["'][^>]*>)([\s\S]*?)(<\/(?:div|span)>)/i,
+      (_, open, _c, close) => open + description + close
+    );
+  }
 
   // Step 7: Replace tags using string replacement
   if (tags.length > 0) {
@@ -393,6 +411,8 @@ ${pdfText.substring(0, 2000)}`
         log(`🎨 Cloning existing card structure...`, 'ai');
         const updatedHtml = cloneAndInjectCard(html, title, description, tags);
         log(`✅ Card cloned & injected!`, 'success');
+        // Debug: show first 300 chars of new card to verify replacements
+        log(`🔍 Card preview: ${updatedHtml.slice(updatedHtml.indexOf('PROJECT-START'), updatedHtml.indexOf('PROJECT-START') + 200)}`, 'info');
 
         log(`🚀 Pushing to ${repo}...`, 'info');
         await pushRepo(owner, repo, token, updatedHtml, sha, title);
