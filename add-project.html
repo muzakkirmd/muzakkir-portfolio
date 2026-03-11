@@ -204,11 +204,20 @@ async function fetchRepo(owner, repo, token) {
   });
   if (!r.ok) throw new Error(`Cannot fetch ${repo}: ${r.status}`);
   const d = await r.json();
-  return { sha: d.sha, html: atob(d.content.replace(/\n/g,'')) };
+  // Decode base64 properly preserving UTF-8 (emojis etc.)
+  const binary = atob(d.content.replace(/\n/g,''));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const html = new TextDecoder('utf-8').decode(bytes);
+  return { sha: d.sha, html };
 }
 
 async function pushRepo(owner, repo, token, html, sha, title) {
-  const encoded = btoa(unescape(encodeURIComponent(html)));
+  // Encode to base64 preserving UTF-8 (emojis etc.)
+  const bytes = new TextEncoder().encode(html);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  const encoded = btoa(binary);
   const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/index.html`, {
     method: 'PUT',
     headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
@@ -217,90 +226,105 @@ async function pushRepo(owner, repo, token, html, sha, title) {
   if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
 }
 
-// ── CORE: Clone last project card and replace its text content only ──────────
+// ── CORE: Pure string injection — never parses/re-serializes the full HTML ────
 function cloneAndInjectCard(html, title, description, tags) {
-  // Parse HTML using DOMParser (browser-native, no external lib)
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
 
-  // Find projects section
-  let projectsSection =
-    doc.querySelector('#projects') ||
-    doc.querySelector('[id*="project"]') ||
-    doc.querySelector('[class*="project"]') ||
-    doc.querySelector('[id*="portfolio"]') ||
-    doc.querySelector('[class*="portfolio"]');
+  // Step 1: Find projects section
+  const sectionPatterns = [
+    /id=["']projects["']/i,
+    /id=["']portfolio["']/i,
+    /class=["'][^"']*projects[^"']*["']/i,
+  ];
+  let sectionIdx = -1;
+  for (const pat of sectionPatterns) {
+    const m = html.search(pat);
+    if (m !== -1) { sectionIdx = m; break; }
+  }
+  if (sectionIdx === -1) throw new Error('Could not find projects section');
 
-  if (!projectsSection) throw new Error('Could not find projects section in HTML');
+  const htmlAfterSection = html.slice(sectionIdx);
 
-  // Find all existing project cards inside the section
-  // Try common card selectors
-  const cardSelectors = ['.project-card', '.tl-item', '[class*="project-card"]', '[class*="card"]'];
-  let cards = [];
-  for (const sel of cardSelectors) {
-    cards = Array.from(projectsSection.querySelectorAll(sel));
-    if (cards.length > 0) break;
+  // Step 2: Find card opening tags
+  const cardOpenPatterns = [
+    /<div[^>]+class=["'][^"']*project-card[^"']*["'][^>]*>/gi,
+    /<div[^>]+class=["'][^"']*tl-item[^"']*["'][^>]*>/gi,
+    /<div[^>]+class=["'][^"']*card[^"']*["'][^>]*>/gi,
+  ];
+  let cardMatches = [];
+  for (const pat of cardOpenPatterns) {
+    const matches = [...htmlAfterSection.matchAll(pat)];
+    if (matches.length > 0) { cardMatches = matches; break; }
+  }
+  if (cardMatches.length === 0) throw new Error('Could not find project cards to clone');
+
+  const lastMatch = cardMatches[cardMatches.length - 1];
+  const lastCardAbsStart = sectionIdx + lastMatch.index;
+
+  // Step 3: Find where the last card ends by counting div depth
+  let depth = 0;
+  let i = lastCardAbsStart;
+  let lastCardAbsEnd = -1;
+  while (i < html.length) {
+    if (html[i] === '<') {
+      if (html.slice(i, i+2) === '</') {
+        const closeEnd = html.indexOf('>', i);
+        if (closeEnd === -1) break;
+        if (depth === 1) { lastCardAbsEnd = closeEnd + 1; break; }
+        depth--;
+        i = closeEnd + 1;
+      } else if (html.slice(i, i+4) !== '<!--') {
+        const tagEnd = html.indexOf('>', i);
+        if (tagEnd === -1) break;
+        const tagContent = html.slice(i, tagEnd + 1);
+        if (!tagContent.endsWith('/>')) depth++;
+        i = tagEnd + 1;
+      } else {
+        const commentEnd = html.indexOf('-->', i);
+        i = commentEnd === -1 ? html.length : commentEnd + 3;
+      }
+    } else { i++; }
+  }
+  if (lastCardAbsEnd === -1) throw new Error('Could not find end of last card');
+
+  // Step 4: Clone last card as raw string
+  let newCardStr = html.slice(lastCardAbsStart, lastCardAbsEnd);
+
+  // Step 5: Replace title (h2/h3/h4)
+  newCardStr = newCardStr.replace(
+    /(<h[234][^>]*>)([\s\S]*?)(<\/h[234]>)/i,
+    (_, open, _c, close) => open + title + close
+  );
+
+  // Step 6: Replace description (first <p>)
+  newCardStr = newCardStr.replace(
+    /(<p[^>]*>)([\s\S]*?)(<\/p>)/i,
+    (_, open, _c, close) => open + description + close
+  );
+
+  // Step 7: Replace tags using string replacement
+  if (tags.length > 0) {
+    const tagPattern = /(<(?:span|div)[^>]*class=["'][^"']*(?:tag|tech|badge|skill|stack)[^"']*["'][^>]*>)([\s\S]*?)(<\/(?:span|div)>)/gi;
+    const tagMatches = [...newCardStr.matchAll(tagPattern)];
+    if (tagMatches.length > 0) {
+      let tagIdx = 0;
+      newCardStr = newCardStr.replace(tagPattern, (match, open, _c, close) => {
+        if (tagIdx < tags.length) return open + tags[tagIdx++] + close;
+        return '';
+      });
+      // Append extra tags if needed
+      if (tagIdx < tags.length && tagMatches.length > 0) {
+        const lastTagMatch = tagMatches[tagMatches.length - 1];
+        const extra = tags.slice(tagIdx).map(tag =>
+          lastTagMatch[1] + tag + lastTagMatch[3]
+        ).join('');
+        newCardStr = newCardStr.replace(/<\/div>\s*$/, extra + '</div>');
+      }
+    }
   }
 
-  // If no cards found with selectors, get direct children divs
-  if (cards.length === 0) {
-    cards = Array.from(projectsSection.children).filter(el => el.tagName === 'DIV');
-  }
-
-  if (cards.length === 0) throw new Error('Could not find project cards to clone');
-
-  // Clone the LAST card (most recent project = best template)
-  const lastCard = cards[cards.length - 1];
-  const newCard = lastCard.cloneNode(true);
-
-  // Find and replace title text
-  const titleEl =
-    newCard.querySelector('h3') ||
-    newCard.querySelector('h2') ||
-    newCard.querySelector('h4') ||
-    newCard.querySelector('[class*="title"]') ||
-    newCard.querySelector('[class*="name"]');
-
-  if (titleEl) titleEl.textContent = title;
-
-  // Find and replace description text
-  const descEl =
-    newCard.querySelector('p') ||
-    newCard.querySelector('[class*="desc"]') ||
-    newCard.querySelector('[class*="text"]') ||
-    newCard.querySelector('[class*="summary"]');
-
-  if (descEl) descEl.textContent = description;
-
-  // Find and replace tags
-  const tagEls = newCard.querySelectorAll('[class*="tag"], [class*="tech"], [class*="badge"], [class*="skill"]');
-  if (tagEls.length > 0 && tags.length > 0) {
-    // Replace text of existing tags, clone last tag for extras
-    const lastTag = tagEls[tagEls.length - 1];
-    const tagParent = lastTag.parentElement;
-
-    // Remove all existing tags
-    tagEls.forEach(t => t.remove());
-
-    // Add new tags by cloning structure
-    tags.forEach(tag => {
-      const newTag = lastTag.cloneNode(true);
-      newTag.textContent = tag;
-      tagParent.appendChild(newTag);
-    });
-  }
-
-  // Add project markers as comments for future removal
-  const startComment = doc.createComment(` PROJECT-START: ${title} `);
-  const endComment = doc.createComment(` PROJECT-END: ${title} `);
-
-  // Insert after the last card
-  lastCard.parentNode.insertBefore(startComment, lastCard.nextSibling);
-  lastCard.parentNode.insertBefore(newCard, startComment.nextSibling);
-  lastCard.parentNode.insertBefore(endComment, newCard.nextSibling);
-
-  // Serialize back to string
-  return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+  // Step 8: Inject right after last card — original HTML completely untouched
+  const injection = `\n<!-- PROJECT-START: ${title} -->\n` + newCardStr + `\n<!-- PROJECT-END: ${title} -->\n`;
+  return html.slice(0, lastCardAbsEnd) + injection + html.slice(lastCardAbsEnd);
 }
 
 async function run() {
