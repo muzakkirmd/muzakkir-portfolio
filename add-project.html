@@ -204,19 +204,22 @@ async function fetchRepo(owner, repo, token) {
   });
   if (!r.ok) throw new Error(`Cannot fetch ${repo}: ${r.status}`);
   const d = await r.json();
-  // Decode base64 properly preserving UTF-8 (emojis etc.)
-  const binary = atob(d.content.replace(/\n/g,''));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  // Strip ALL non-base64 chars, decode bytes, then decode as UTF-8
+  const b64 = d.content.replace(/[^A-Za-z0-9+/=]/g, '');
+  const binaryStr = atob(b64);
+  const bytes = Uint8Array.from(binaryStr, c => c.charCodeAt(0));
   const html = new TextDecoder('utf-8').decode(bytes);
   return { sha: d.sha, html };
 }
 
 async function pushRepo(owner, repo, token, html, sha, title) {
-  // Encode to base64 preserving UTF-8 (emojis etc.)
-  const bytes = new TextEncoder().encode(html);
+  // Encode UTF-8 → base64 in chunks to safely handle emojis in large files
+  const utf8Bytes = new TextEncoder().encode(html);
+  const CHUNK = 0x8000; // 32KB chunks — safe for all file sizes
   let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < utf8Bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...utf8Bytes.subarray(i, i + CHUNK));
+  }
   const encoded = btoa(binary);
   const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/index.html`, {
     method: 'PUT',
