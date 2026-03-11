@@ -68,7 +68,7 @@
   <div class="header">
     <div class="logo">🚀</div>
     <h1>Project Updater</h1>
-    <p class="subtitle">Upload PDF → AI analyzes your site → pushes a matching card</p>
+    <p class="subtitle">Upload PDF → clones your card style → pushes to GitHub</p>
   </div>
 
   <div class="field">
@@ -82,7 +82,7 @@
       <span class="free-badge">✅ FREE</span>
     </div>
     <input type="password" id="groqKey" placeholder="gsk_..." autocomplete="off"/>
-    <p class="hint">You already have one from Aini! Or get free at <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a></p>
+    <p class="hint">Get free key at <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a></p>
   </div>
 
   <hr class="divider"/>
@@ -116,7 +116,7 @@
     <div class="preview-desc" id="previewDesc"></div>
   </div>
   <div class="sites-result" id="resultsRow" style="display:none"></div>
-  <p class="foot-note">🔒 Keys never stored — session only · Powered by Groq (free)</p>
+  <p class="foot-note">🔒 Keys never stored · Card cloned from your site · Powered by Groq (free)</p>
 </div>
 
 <script>
@@ -175,7 +175,7 @@ async function extractPDFText(file) {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
   let text = '';
-  for (let i = 1; i <= Math.min(pdf.numPages, 4); i++) {
+  for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     text += content.items.map(x => x.str).join(' ') + '\n';
@@ -189,7 +189,7 @@ async function callGroq(groqKey, system, user) {
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
     body: JSON.stringify({
       model: 'llama-3.1-8b-instant',
-      max_tokens: 6000,
+      max_tokens: 1000,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
     })
   });
@@ -217,6 +217,92 @@ async function pushRepo(owner, repo, token, html, sha, title) {
   if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
 }
 
+// ── CORE: Clone last project card and replace its text content only ──────────
+function cloneAndInjectCard(html, title, description, tags) {
+  // Parse HTML using DOMParser (browser-native, no external lib)
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+
+  // Find projects section
+  let projectsSection =
+    doc.querySelector('#projects') ||
+    doc.querySelector('[id*="project"]') ||
+    doc.querySelector('[class*="project"]') ||
+    doc.querySelector('[id*="portfolio"]') ||
+    doc.querySelector('[class*="portfolio"]');
+
+  if (!projectsSection) throw new Error('Could not find projects section in HTML');
+
+  // Find all existing project cards inside the section
+  // Try common card selectors
+  const cardSelectors = ['.project-card', '.tl-item', '[class*="project-card"]', '[class*="card"]'];
+  let cards = [];
+  for (const sel of cardSelectors) {
+    cards = Array.from(projectsSection.querySelectorAll(sel));
+    if (cards.length > 0) break;
+  }
+
+  // If no cards found with selectors, get direct children divs
+  if (cards.length === 0) {
+    cards = Array.from(projectsSection.children).filter(el => el.tagName === 'DIV');
+  }
+
+  if (cards.length === 0) throw new Error('Could not find project cards to clone');
+
+  // Clone the LAST card (most recent project = best template)
+  const lastCard = cards[cards.length - 1];
+  const newCard = lastCard.cloneNode(true);
+
+  // Find and replace title text
+  const titleEl =
+    newCard.querySelector('h3') ||
+    newCard.querySelector('h2') ||
+    newCard.querySelector('h4') ||
+    newCard.querySelector('[class*="title"]') ||
+    newCard.querySelector('[class*="name"]');
+
+  if (titleEl) titleEl.textContent = title;
+
+  // Find and replace description text
+  const descEl =
+    newCard.querySelector('p') ||
+    newCard.querySelector('[class*="desc"]') ||
+    newCard.querySelector('[class*="text"]') ||
+    newCard.querySelector('[class*="summary"]');
+
+  if (descEl) descEl.textContent = description;
+
+  // Find and replace tags
+  const tagEls = newCard.querySelectorAll('[class*="tag"], [class*="tech"], [class*="badge"], [class*="skill"]');
+  if (tagEls.length > 0 && tags.length > 0) {
+    // Replace text of existing tags, clone last tag for extras
+    const lastTag = tagEls[tagEls.length - 1];
+    const tagParent = lastTag.parentElement;
+
+    // Remove all existing tags
+    tagEls.forEach(t => t.remove());
+
+    // Add new tags by cloning structure
+    tags.forEach(tag => {
+      const newTag = lastTag.cloneNode(true);
+      newTag.textContent = tag;
+      tagParent.appendChild(newTag);
+    });
+  }
+
+  // Add project markers as comments for future removal
+  const startComment = doc.createComment(` PROJECT-START: ${title} `);
+  const endComment = doc.createComment(` PROJECT-END: ${title} `);
+
+  // Insert after the last card
+  lastCard.parentNode.insertBefore(startComment, lastCard.nextSibling);
+  lastCard.parentNode.insertBefore(newCard, startComment.nextSibling);
+  lastCard.parentNode.insertBefore(endComment, newCard.nextSibling);
+
+  // Serialize back to string
+  return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+}
+
 async function run() {
   const token = document.getElementById('tokenInput').value.trim();
   const groqKey = document.getElementById('groqKey').value.trim();
@@ -235,72 +321,54 @@ async function run() {
   const results = {};
 
   try {
+    // Step 1: Extract PDF text
     log('📄 Extracting PDF text...', 'info');
     const pdfText = await extractPDFText(pdfFile);
     log('✅ PDF text extracted!', 'success');
 
-    log('🤖 Groq AI extracting project info (free)...', 'ai');
+    // Step 2: Extract project info with Groq (small payload — just PDF text)
+    log('🤖 Extracting project info with Groq...', 'ai');
     const extracted = await callGroq(
       groqKey,
-      'Return ONLY valid raw JSON. No markdown, no backticks, no explanation.',
-      `Extract the project title and a 2-3 sentence description from this text. Respond ONLY with: {"title":"...","description":"..."}\n\n${pdfText.substring(0,3000)}`
-    );
-    const { title, description } = JSON.parse(extracted.replace(/```json|```/g,'').trim());
-    log(`📋 "${title}"`, 'success');
+      'Return ONLY raw JSON. No markdown, no backticks, no explanation.',
+      `From this text extract: project title, 2-sentence description, and up to 4 tech tags.
+Respond ONLY with: {"title":"...","description":"...","tags":["...","..."]}
 
+TEXT:
+${pdfText.substring(0, 2000)}`
+    );
+
+    let title, description, tags;
+    try {
+      const parsed = JSON.parse(extracted.replace(/```json|```/g,'').trim());
+      title = parsed.title;
+      description = parsed.description;
+      tags = parsed.tags || [];
+    } catch(e) {
+      throw new Error('Could not parse project info from AI response');
+    }
+
+    log(`📋 "${title}"`, 'success');
     document.getElementById('preview').style.display = 'block';
     document.getElementById('previewTitle').textContent = title;
     document.getElementById('previewDesc').textContent = description;
 
+    // Step 3: Process each repo
     const targets = selectedSite === 'both' ? ['portfolio','freelance'] : [selectedSite];
 
     for (const site of targets) {
       const { owner, repo } = REPOS[site];
       try {
-        log(`📡 Fetching ${repo} index.html...`, 'info');
+        log(`📡 Fetching ${repo}...`, 'info');
         const { sha, html } = await fetchRepo(owner, repo, token);
         log(`✅ Fetched (${(html.length/1024).toFixed(0)}KB)`, 'success');
 
-        log(`🧠 Analyzing ${site} card style...`, 'ai');
-        // Send only the projects section portion to stay within Groq token limit
-        const projIdx = html.search(/id=["']projects["']/i);
-        const htmlChunk = projIdx > -1
-          ? html.substring(Math.max(0, projIdx - 200), Math.min(html.length, projIdx + 6000))
-          : html.substring(0, 6000);
-
-        const updatedChunk = await callGroq(
-          groqKey,
-          'You are an expert HTML editor. Return ONLY the complete updated HTML snippet. No markdown, no backticks, no commentary.',
-          `Add a new project card to this HTML that EXACTLY matches the style of existing project cards.
-
-NEW PROJECT:
-Title: ${title}
-Description: ${description}
-
-RULES:
-- Copy the EXACT same HTML structure, CSS classes, and attributes as existing cards
-- Add the new card at the END of existing cards
-- Wrap it with: <!-- PROJECT-START: ${title} --> and <!-- PROJECT-END: ${title} -->
-- Return the complete updated HTML snippet only
-
-HTML:
-${htmlChunk}`
-        );
-
-        const cleanChunk = updatedChunk.replace(/^```html\n?/,'').replace(/\n?```$/,'').trim();
-
-        // Merge updated chunk back into full HTML
-        let finalHtml;
-        if (projIdx > -1) {
-          const before = html.substring(0, Math.max(0, projIdx - 200));
-          const after = html.substring(Math.min(html.length, projIdx + 6000));
-          finalHtml = before + cleanChunk + after;
-        } else {
-          finalHtml = cleanChunk;
-        }
+        log(`🎨 Cloning existing card structure...`, 'ai');
+        const updatedHtml = cloneAndInjectCard(html, title, description, tags);
+        log(`✅ Card cloned & injected!`, 'success');
 
         log(`🚀 Pushing to ${repo}...`, 'info');
-        await pushRepo(owner, repo, token, finalHtml, sha, title);
+        await pushRepo(owner, repo, token, updatedHtml, sha, title);
         log(`✅ Pushed to ${repo}!`, 'success');
         results[site] = 'ok';
       } catch(err) {
