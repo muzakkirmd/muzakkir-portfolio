@@ -229,8 +229,33 @@ async function pushRepo(owner, repo, token, html, sha, title) {
   if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
 }
 
-// ── CORE: Pure string injection — never parses/re-serializes the full HTML ────
-function cloneAndInjectCard(html, title, description, tags) {
+// ── Helper: given the absolute start of a card div, find its closing position ─
+function findCardEnd(html, absStart) {
+  let depth = 0, i = absStart;
+  while (i < html.length) {
+    if (html[i] === '<') {
+      if (html.slice(i, i+2) === '</') {
+        const closeEnd = html.indexOf('>', i);
+        if (closeEnd === -1) break;
+        if (depth === 1) return closeEnd + 1; // closing tag of the outermost card div
+        depth--;
+        i = closeEnd + 1;
+      } else if (html.slice(i, i+4) !== '<!--') {
+        const tagEnd = html.indexOf('>', i);
+        if (tagEnd === -1) break;
+        if (!html.slice(i, tagEnd + 1).endsWith('/>')) depth++;
+        i = tagEnd + 1;
+      } else {
+        const commentEnd = html.indexOf('-->', i);
+        i = commentEnd === -1 ? html.length : commentEnd + 3;
+      }
+    } else { i++; }
+  }
+  return -1;
+}
+
+// ── CORE: Uses Groq to generate new card HTML — avoids all regex-replacement bugs ─
+async function cloneAndInjectCard(html, title, description, tags, groqKey) {
 
   // Step 1: Find projects section
   const sectionPatterns = [
@@ -247,7 +272,7 @@ function cloneAndInjectCard(html, title, description, tags) {
 
   const htmlAfterSection = html.slice(sectionIdx);
 
-  // Step 2: Find card opening tags
+  // Step 2: Find card opening patterns
   const cardOpenPatterns = [
     /<div[^>]+class=["'][^"']*project-card[^"']*["'][^>]*>/gi,
     /<div[^>]+class=["'][^"']*tl-item[^"']*["'][^>]*>/gi,
@@ -260,90 +285,54 @@ function cloneAndInjectCard(html, title, description, tags) {
   }
   if (cardMatches.length === 0) throw new Error('Could not find project cards to clone');
 
-  const lastMatch = cardMatches[cardMatches.length - 1];
-  const lastCardAbsStart = sectionIdx + lastMatch.index;
+  // Step 3: LINEAR SCAN — only collect TOP-LEVEL cards (skips any nested matches)
+  // A card is top-level if its start position comes AFTER the previous card's end.
+  const allAbsStarts = cardMatches.map(m => sectionIdx + m.index);
+  let topLevelCards = [];
+  let minNextStart = sectionIdx;
 
-  // Step 3: Find where the last card ends by counting div depth
-  let depth = 0;
-  let i = lastCardAbsStart;
-  let lastCardAbsEnd = -1;
-  while (i < html.length) {
-    if (html[i] === '<') {
-      if (html.slice(i, i+2) === '</') {
-        const closeEnd = html.indexOf('>', i);
-        if (closeEnd === -1) break;
-        if (depth === 1) { lastCardAbsEnd = closeEnd + 1; break; }
-        depth--;
-        i = closeEnd + 1;
-      } else if (html.slice(i, i+4) !== '<!--') {
-        const tagEnd = html.indexOf('>', i);
-        if (tagEnd === -1) break;
-        const tagContent = html.slice(i, tagEnd + 1);
-        if (!tagContent.endsWith('/>')) depth++;
-        i = tagEnd + 1;
-      } else {
-        const commentEnd = html.indexOf('-->', i);
-        i = commentEnd === -1 ? html.length : commentEnd + 3;
-      }
-    } else { i++; }
+  for (const absStart of allAbsStarts) {
+    if (absStart < minNextStart) continue; // nested inside a previous card — skip
+    const absEnd = findCardEnd(html, absStart);
+    if (absEnd === -1) break;
+    topLevelCards.push({ absStart, absEnd });
+    minNextStart = absEnd; // next top-level card must start at or after this card ends
   }
-  if (lastCardAbsEnd === -1) throw new Error('Could not find end of last card');
 
-  // Step 4: Clone last card as raw string
-  let newCardStr = html.slice(lastCardAbsStart, lastCardAbsEnd);
+  if (topLevelCards.length === 0) throw new Error('Could not determine top-level project cards');
 
-  // Step 5: Replace title — try h2/h3/h4 first, then class-based divs/spans
-  const titleReplaced = newCardStr.replace(
-    /(<h[234][^>]*>)([\s\S]*?)(<\/h[234]>)/i,
-    (_, open, _c, close) => open + title + close
+  const { absStart: lastCardAbsStart, absEnd: lastCardAbsEnd } = topLevelCards[topLevelCards.length - 1];
+
+  // Use one of the earlier cards as the template so we always get a clean example
+  const templateCard = topLevelCards[0];
+  const exampleCardHtml = html.slice(templateCard.absStart, templateCard.absEnd);
+
+  // Step 4: Ask Groq to generate a brand-new card using the example as template
+  let newCardStr = await callGroq(
+    groqKey,
+    'You are an HTML code generator. Return ONLY the raw HTML — absolutely no explanation, no markdown, no backticks.',
+    `Below is an existing project card from my portfolio site. Use it as the EXACT structural template.
+
+EXAMPLE CARD:
+${exampleCardHtml}
+
+Generate a NEW card using the identical HTML structure, element types, class names, and inline styles as the example above.
+Replace ONLY the visible text content with:
+  Title: ${title}
+  Description: ${description}
+  Tech tags: ${tags.join(', ')}
+
+Rules:
+- Keep every class name, attribute, and HTML element exactly as in the example.
+- Do NOT add, remove, or rename any element or class.
+- Replace icon/emoji only if the example has one — pick a fitting one for the new project.
+- Return ONLY the raw HTML of the single card element, nothing else.`
   );
-  if (titleReplaced !== newCardStr) {
-    newCardStr = titleReplaced;
-  } else {
-    // Fallback: find div/span/p with class containing title/name/heading
-    newCardStr = newCardStr.replace(
-      /(<(?:div|span|p)[^>]*class=["'][^"']*(?:title|heading|name|project-name)[^"']*["'][^>]*>)([\s\S]*?)(<\/(?:div|span|p)>)/i,
-      (_, open, _c, close) => open + title + close
-    );
-  }
 
-  // Step 6: Replace description — try <p> first, then class-based
-  const descReplaced = newCardStr.replace(
-    /(<p(?:\s[^>]*)?>)([\s\S]*?)(<\/p>)/i,
-    (_, open, _c, close) => open + description + close
-  );
-  if (descReplaced !== newCardStr) {
-    newCardStr = descReplaced;
-  } else {
-    // Fallback: div/span with class containing desc/text/summary/body
-    newCardStr = newCardStr.replace(
-      /(<(?:div|span)[^>]*class=["'][^"']*(?:desc|description|text|summary|body|content)[^"']*["'][^>]*>)([\s\S]*?)(<\/(?:div|span)>)/i,
-      (_, open, _c, close) => open + description + close
-    );
-  }
+  // Strip any accidental markdown code fences Groq might add
+  newCardStr = newCardStr.replace(/^```(?:html)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
-  // Step 7: Replace tags using string replacement
-  if (tags.length > 0) {
-    const tagPattern = /(<(?:span|div)[^>]*class=["'][^"']*(?:tag|tech|badge|skill|stack)[^"']*["'][^>]*>)([\s\S]*?)(<\/(?:span|div)>)/gi;
-    const tagMatches = [...newCardStr.matchAll(tagPattern)];
-    if (tagMatches.length > 0) {
-      let tagIdx = 0;
-      newCardStr = newCardStr.replace(tagPattern, (match, open, _c, close) => {
-        if (tagIdx < tags.length) return open + tags[tagIdx++] + close;
-        return '';
-      });
-      // Append extra tags if needed
-      if (tagIdx < tags.length && tagMatches.length > 0) {
-        const lastTagMatch = tagMatches[tagMatches.length - 1];
-        const extra = tags.slice(tagIdx).map(tag =>
-          lastTagMatch[1] + tag + lastTagMatch[3]
-        ).join('');
-        newCardStr = newCardStr.replace(/<\/div>\s*$/, extra + '</div>');
-      }
-    }
-  }
-
-  // Step 8: Inject right after last card — original HTML completely untouched
+  // Step 5: Inject right after the last top-level card — rest of HTML untouched
   const injection = `\n<!-- PROJECT-START: ${title} -->\n` + newCardStr + `\n<!-- PROJECT-END: ${title} -->\n`;
   return html.slice(0, lastCardAbsEnd) + injection + html.slice(lastCardAbsEnd);
 }
@@ -408,11 +397,9 @@ ${pdfText.substring(0, 2000)}`
         const { sha, html } = await fetchRepo(owner, repo, token);
         log(`✅ Fetched (${(html.length/1024).toFixed(0)}KB)`, 'success');
 
-        log(`🎨 Cloning existing card structure...`, 'ai');
-        const updatedHtml = cloneAndInjectCard(html, title, description, tags);
-        log(`✅ Card cloned & injected!`, 'success');
-        // Debug: show first 300 chars of new card to verify replacements
-        log(`🔍 Card preview: ${updatedHtml.slice(updatedHtml.indexOf('PROJECT-START'), updatedHtml.indexOf('PROJECT-START') + 200)}`, 'info');
+        log(`🎨 Generating new card with Groq...`, 'ai');
+        const updatedHtml = await cloneAndInjectCard(html, title, description, tags, groqKey);
+        log(`✅ Card generated & injected!`, 'success');
 
         log(`🚀 Pushing to ${repo}...`, 'info');
         await pushRepo(owner, repo, token, updatedHtml, sha, title);
